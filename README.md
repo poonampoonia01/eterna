@@ -1,45 +1,51 @@
-# 📄 Order Execution Engine
+# Order Execution Engine
 
-A backend system that accepts **Limit Orders**, continuously checks prices from **Raydium** and **Meteora** DEXs, and executes orders when target prices are reached. The system provides real-time WebSocket status updates, uses BullMQ queues for processing, and stores results in PostgreSQL.
+Backend system for executing limit orders on DEXs (Raydium and Meteora). Monitors prices and executes when target price is reached. Uses WebSocket for real-time status updates and BullMQ for queue processing.
 
-## 🎯 Why Limit Orders?
+## Why Limit Orders?
 
-Limit orders were chosen as the initial implementation because they provide users with price control and execution certainty. Users can set a target price and the system will wait until the market price reaches or exceeds that target before executing, ensuring they get the price they want or better. This is particularly valuable in volatile markets where timing is critical.
+Limit orders give users price control - the system waits until market price meets or exceeds the target before executing. This ensures execution at desired price or better.
 
-**Extending for Market & Sniper Orders:**
-- **Market Orders**: Execute immediately at current best price (skip price watcher, go straight to execution)
-- **Sniper Orders**: Monitor for specific conditions (e.g., new token listing, liquidity threshold) before executing
+To extend for other order types:
+- **Market Orders**: Skip price watcher, execute immediately at best price
+- **Sniper Orders**: Add conditions (new token listing, liquidity threshold) before execution
 
-## 🚀 Features
+## Features
 
-- ✅ **Limit Order Execution** - Wait for target price before executing
-- ✅ **DEX Routing** - Compare prices from Raydium and Meteora
-- ✅ **WebSocket Status Updates** - Real-time order status streaming
-- ✅ **Queue System** - BullMQ with Redis for scalable processing
-- ✅ **PostgreSQL Database** - Persistent order storage
-- ✅ **Mock Execution** - Simulated swap execution with transaction hashes
-- ✅ **Comprehensive Testing** - 10+ unit and integration tests
+- Limit order execution with price monitoring
+- DEX routing (compares Raydium vs Meteora prices)
+- Real-time WebSocket status updates
+- BullMQ queue with Redis (10 concurrent workers, 100 orders/min)
+- PostgreSQL for order persistence
+- Mock execution engine (generates txHash, simulates swap)
 
-## 📋 Prerequisites
+## Tech Stack
 
-- Node.js 18+ 
+- Node.js + TypeScript
+- Express.js
+- BullMQ + Redis (Upstash)
+- PostgreSQL + Prisma
+- WebSocket (ws)
+
+## Setup
+
+### Prerequisites
+
+- Node.js 18+
 - PostgreSQL database
-- Redis instance (Upstash recommended)
-- npm or yarn
+- Redis instance (Upstash works)
 
-## 🛠️ Setup Instructions
-
-### 1. Clone and Install Dependencies
+### Installation
 
 ```bash
 npm install
 ```
 
-### 2. Environment Variables
+### Environment Variables
 
-Create a `.env` file in the root directory:
+Create `.env` file:
 
-```env
+```
 DATABASE_URL="your_postgresql_connection_string"
 UPSTASH_REDIS_REST_URL="your_upstash_redis_rest_url"
 UPSTASH_REDIS_REST_TOKEN="your_upstash_redis_token"
@@ -47,62 +53,39 @@ PORT=3000
 NODE_ENV=development
 ```
 
-### 3. Database Setup
-
-Generate Prisma client and run migrations:
+### Database Setup
 
 ```bash
 npm run prisma:generate
 npm run prisma:migrate
 ```
 
-### 4. Build the Project
+### Run
 
-```bash
-npm run build
-```
-
-## 🏃 Running the Application
-
-### Development Mode
-
+Development:
 ```bash
 npm run dev
 ```
 
-This starts:
-- Express server on port 3000
-- BullMQ worker with 10 concurrent workers
-- WebSocket server for status updates
-
-### Production Mode
-
+Production:
 ```bash
 npm run build
 npm start
 ```
 
-### Running Tests
+### Tests
 
 ```bash
 npm test
 ```
 
-### Database Studio (Optional)
+## API
 
-View and manage database records:
+### POST /api/orders/execute
 
-```bash
-npm run prisma:studio
-```
+Create a limit order.
 
-## 📡 API Documentation
-
-### POST `/api/orders/execute`
-
-Create a new limit order.
-
-**Request Body:**
+Request:
 ```json
 {
   "orderType": "limit",
@@ -113,62 +96,40 @@ Create a new limit order.
 }
 ```
 
-**Response:**
+Response:
 ```json
 {
   "orderId": "uuid-1234"
 }
 ```
 
-**Status Codes:**
-- `201 Created` - Order created successfully
-- `400 Bad Request` - Invalid request data
-- `500 Internal Server Error` - Server error
-
-### GET `/api/orders/:orderId`
+### GET /api/orders/:orderId
 
 Get order status and details.
 
-**Response:**
-```json
-{
-  "id": "uuid-1234",
-  "tokenIn": "SOL",
-  "tokenOut": "USDC",
-  "amount": 1,
-  "targetPrice": 185,
-  "selectedDex": "Raydium",
-  "executedPrice": 185.12,
-  "status": "confirmed",
-  "txHash": "a289fbc01923...",
-  "createdAt": "2024-01-01T00:00:00.000Z",
-  "updatedAt": "2024-01-01T00:00:00.000Z"
-}
-```
+### WebSocket
 
-### WebSocket Connection
-
-Connect to WebSocket for real-time status updates:
+Connect to receive real-time status updates:
 
 ```
 ws://localhost:3000?orderId=<orderId>
 ```
 
-**Status Events (in order):**
-1. `pending` - Order created, waiting in queue
-2. `routing` - Fetching quotes from DEXs
-3. `waiting-price` - Waiting for price to meet target
+Status flow:
+1. `pending` - Order created
+2. `routing` - Fetching DEX quotes
+3. `waiting-price` - Waiting for target price (updates every 5s with bestPrice)
 4. `building` - Preparing transaction
-5. `submitted` - Transaction submitted
+5. `submitted` - Transaction submitted (includes txHash)
 6. `confirmed` - Transaction confirmed
-7. `failed` - Order failed (with failureReason)
+7. `failed` - Order failed (includes failureReason)
 
-**WebSocket Message Format:**
+WebSocket message format:
 ```json
 {
   "orderId": "uuid-1234",
   "status": "waiting-price",
-  "timestamp": "2024-01-01T00:00:00.000Z",
+  "timestamp": "2025-11-19T18:30:00.000Z",
   "data": {
     "selectedDex": "Raydium",
     "bestPrice": 183.5
@@ -176,171 +137,78 @@ ws://localhost:3000?orderId=<orderId>
 }
 ```
 
-## 🔄 Order Processing Flow
+## How It Works
 
-1. **Order Creation**: Client sends POST request → Order saved to DB → Added to queue
-2. **Routing**: Worker fetches quotes from Raydium and Meteora → Selects best price
-3. **Price Watching**: Worker checks price every 5 seconds until `bestPrice >= targetPrice`
-4. **Execution**: When price meets target → Build transaction → Execute swap → Get txHash
-5. **Completion**: Update DB → Send WebSocket updates → Order marked as confirmed
+1. Order created via API → saved to DB → added to queue
+2. Worker fetches quotes from Raydium and Meteora → selects best price
+3. Price watcher checks every 5 seconds until `bestPrice >= targetPrice`
+4. When price meets target → build transaction → execute swap → get txHash
+5. Update DB and send WebSocket updates → order marked as confirmed
 
-## 🧪 Testing
+Price watcher timeout: 5 minutes. If price never meets target, order fails.
 
-The test suite includes:
+## Configuration
 
-- ✅ DEX price routing logic (Raydium vs Meteora)
-- ✅ Limit price watcher behavior
-- ✅ Queue retry mechanism
-- ✅ WebSocket lifecycle
-- ✅ Mock execution engine
-- ✅ API validation
-- ✅ Failure scenarios
-- ✅ Complete order flow
-- ✅ Timeout handling
-- ✅ Logging functionality
+- Queue: `orderQueue`, 10 workers, 100 orders/minute
+- Retry: 3 attempts, exponential backoff (2s, 4s, 8s)
+- Price check interval: 5 seconds
+- Max wait time: 5 minutes
+- DEX quote delay: 200ms per DEX
+- Execution time: 2-3 seconds (simulated)
 
-Run tests:
-```bash
-npm test
-```
-
-## 📦 Project Structure
+## Project Structure
 
 ```
 src/
-  api/
-    executeOrder.ts          # API endpoint handler
-  ws/
-    websocketManager.ts      # WebSocket status broadcasting
-  queue/
-    orderQueue.ts           # BullMQ queue setup
-    orderWorker.ts          # Order processing worker
-  dex/
-    mockDexRouter.ts        # DEX price routing (Raydium + Meteora)
-  execution/
-    mockExecutor.ts         # Mock swap execution
-  db/
-    client.ts               # Prisma client
-  utils/
-    sleep.ts                # Sleep utility
-    logger.ts               # Logging utility
-  types/
-    orderTypes.ts           # TypeScript type definitions
-index.ts                    # Main server entry point
+  api/          # API handlers
+  ws/           # WebSocket manager
+  queue/        # BullMQ queue and worker
+  dex/          # DEX router (Raydium + Meteora)
+  execution/    # Mock execution engine
+  db/           # Prisma client
+  utils/        # Utilities
+  types/        # TypeScript types
 ```
 
-## 🚢 Deployment
+## Deployment
 
 ### Render
 
-1. Create a new Web Service
-2. Connect your repository
-3. Set build command: `npm install && npm run build`
-4. Set start command: `npm start`
+1. Create new Web Service
+2. Connect repository
+3. Build: `npm install && npm run build && npm run prisma:generate`
+4. Start: `npm start`
 5. Add environment variables
 
 ### Fly.io
 
-1. Install Fly CLI: `curl -L https://fly.io/install.sh | sh`
-2. Run: `fly launch`
-3. Set environment variables: `fly secrets set KEY=value`
+1. Install Fly CLI
+2. Run `fly launch`
+3. Set secrets: `fly secrets set KEY=value`
 4. Deploy: `fly deploy`
 
-**Required Environment Variables:**
-- `DATABASE_URL`
-- `UPSTASH_REDIS_REST_URL`
-- `UPSTASH_REDIS_REST_TOKEN`
-- `PORT` (optional, defaults to 3000)
-- `NODE_ENV=production`
+Required env vars: `DATABASE_URL`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `PORT`, `NODE_ENV`
 
-## 📊 Queue Configuration
+## Testing
 
-- **Queue Name**: `orderQueue`
-- **Concurrency**: 10 workers
-- **Rate Limit**: 100 orders/minute
-- **Retry**: 3 attempts with exponential backoff (2s, 4s, 8s)
+Import `postman_collection.json` into Postman for API testing.
 
-## 🎥 Demo Video
+Test coverage:
+- DEX routing logic
+- Price watcher behavior
+- Mock execution
+- API validation
+- WebSocket lifecycle
+- Queue retry logic
+- Failure scenarios
 
-[Link to YouTube demo video - 1-2 minutes]
+## Notes
 
-The demo shows:
-- Submitting a limit order via API
-- WebSocket receiving all status events in sequence
-- Queue processing multiple orders concurrently
-- DEX routing logs (Raydium vs Meteora comparison)
-- Database entries updating in real-time
+- Redis connection extracts hostname from Upstash REST URL and uses Redis protocol (port 6379 + TLS)
+- DEX router uses random price variations (Raydium: 0.98-1.02x, Meteora: 0.97-1.03x)
+- Execution is mocked - replace `MockExecutor` with real swap logic for production
+- WebSocket clients must connect with `?orderId=<orderId>` query parameter
 
-## 📝 Postman Collection
-
-Import the Postman collection to test the API:
-
-1. Create a new request: `POST http://your-url/api/orders/execute`
-2. Body (JSON):
-```json
-{
-  "orderType": "limit",
-  "tokenIn": "SOL",
-  "tokenOut": "USDC",
-  "amount": 1,
-  "targetPrice": 185
-}
-```
-
-3. For WebSocket testing, use a WebSocket client like:
-   - [WebSocket King](https://websocketking.com/)
-   - [Postman WebSocket](https://www.postman.com/product/websocket/)
-
-## 🔧 Configuration
-
-### Price Watcher Settings
-
-- **Check Interval**: 5 seconds
-- **Max Wait Time**: 5 minutes
-- **Timeout Action**: Mark order as failed
-
-### DEX Router Settings
-
-- **Raydium Price Variation**: 0.98 - 1.02x base price
-- **Meteora Price Variation**: 0.97 - 1.03x base price
-- **Quote Delay**: 200ms per DEX
-
-### Execution Settings
-
-- **Execution Time**: 2-3 seconds (simulated)
-- **Price Variation**: ±0.5% from best quote
-- **Transaction Hash**: 64-character hex string
-
-## 🐛 Troubleshooting
-
-### Redis Connection Issues
-
-If you see Redis connection errors:
-- Verify `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are correct
-- Check that your Upstash instance is active
-- Ensure TLS is enabled (handled automatically)
-
-### Database Connection Issues
-
-- Verify `DATABASE_URL` is correct
-- Check PostgreSQL is accessible
-- Run `npm run prisma:generate` if Prisma client is missing
-
-### WebSocket Not Connecting
-
-- Ensure server is running
-- Check WebSocket URL includes `?orderId=<orderId>`
-- Verify orderId exists in database
-
-## 📄 License
+## License
 
 MIT
-
-## 👥 Contributing
-
-Contributions welcome! Please open an issue or submit a pull request.
-
----
-
-**Built with:** Node.js, TypeScript, Express, BullMQ, PostgreSQL, Prisma, WebSocket, Redis
-
