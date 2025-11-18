@@ -7,6 +7,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "postbuild": "node -e \"require('fs').accessSync('dist/index.js')\" || exit 1",
+    "render-build": "npm install && npm run prisma:generate && npm run build",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "test": "jest",
     "test:watch": "jest --watch",

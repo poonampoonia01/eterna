@@ -3,7 +3,7 @@ services:
     name: order-execution-engine
     env: node
     buildCommand: npm install && npm run prisma:generate && npm run build
-    startCommand: node dist/index.js
+    startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
