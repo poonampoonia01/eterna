@@ -21,7 +21,7 @@ export class WebSocketManager {
       
       if (!orderId) {
         Logger.warn('WebSocket connection without orderId, closing');
-        ws.close(1008, 'Missing orderId parameter');
+        wsConnection.close(1008, 'Missing orderId parameter');
         return;
       }
 
